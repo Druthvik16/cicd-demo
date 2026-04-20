@@ -1,3 +1,228 @@
+# name: CI/CD Pipeline
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+# jobs:
+
+#   # JOB 1 — Detect what changed
+#   detect-changes:
+#     name: Detect What Changed
+#     runs-on: ubuntu-latest
+#     outputs:
+#       frontend_changed: ${{ steps.check.outputs.frontend }}
+#       backend_changed: ${{ steps.check.outputs.backend }}
+#     steps:
+#       - uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 2
+
+#       - name: Check changed files
+#         id: check
+#         run: |
+#           # If only one commit exists (first push), diff against empty tree
+#           if git rev-parse HEAD~1 > /dev/null 2>&1; then
+#             CHANGED=$(git diff --name-only HEAD~1 HEAD)
+#           else
+#             echo "First commit - treating everything as changed"
+#             CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
+#           fi
+
+#           echo "Files changed:"
+#           echo "$CHANGED"
+
+#           if echo "$CHANGED" | grep -q "^angular-frontend/"; then
+#             echo "frontend=true" >> $GITHUB_OUTPUT
+#             echo "FRONTEND changed"
+#           else
+#             echo "frontend=false" >> $GITHUB_OUTPUT
+#             echo "FRONTEND not changed - skipping Angular build"
+#           fi
+
+#           if echo "$CHANGED" | grep -q "^node-backend/"; then
+#             echo "backend=true" >> $GITHUB_OUTPUT
+#             echo "BACKEND changed"
+#           else
+#             echo "backend=false" >> $GITHUB_OUTPUT
+#             echo "BACKEND not changed"
+#           fi
+
+#   # JOB 2 — Build Angular (ONLY if angular-frontend/ changed)
+#   build-frontend:
+#     name: Build Angular
+#     runs-on: ubuntu-latest
+#     needs: detect-changes
+#     if: needs.detect-changes.outputs.frontend_changed == 'true'
+#     steps:
+#       - uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 2
+
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: '20'
+
+#       - name: Install frontend deps
+#         working-directory: angular-frontend
+#         run: |
+#           if git rev-parse HEAD~1 > /dev/null 2>&1; then
+#             CHANGED=$(git diff --name-only HEAD~1 HEAD)
+#           else
+#             CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
+#           fi
+
+#           if echo "$CHANGED" | grep -q "angular-frontend/package.json"; then
+#             echo "package.json changed - npm install"
+#             npm install
+#           else
+#             echo "package.json unchanged - npm ci"
+#             npm ci
+#           fi
+
+#       - name: Build Angular
+#         working-directory: angular-frontend
+#         run: npm run build -- --configuration development
+
+#       - name: Upload build artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: angular-build
+#           path: angular-frontend/dist/angular-frontend/browser/
+#           retention-days: 1
+
+#   # JOB 3 — Deploy backend only (backend changed, frontend did NOT change)
+#   deploy-backend-only:
+#     name: Deploy Backend Only
+#     runs-on: ubuntu-latest
+#     needs: detect-changes
+#     if: |
+#       needs.detect-changes.outputs.backend_changed == 'true' &&
+#       needs.detect-changes.outputs.frontend_changed == 'false'
+#     steps:
+#       - uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 2
+
+#       - name: Setup SSH
+#         run: |
+#           mkdir -p ~/.ssh
+#           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/key.pem
+#           chmod 600 ~/.ssh/key.pem
+#           ssh-keyscan -t rsa,ed25519 ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+#       - name: Deploy backend on EC2
+#         run: |
+#           ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+#             set -e
+#             echo "=== Backend-only deploy ==="
+#             cd ~/app
+#             git pull origin main
+
+#             # Check if package.json changed - handle first commit case
+#             if git rev-parse HEAD~1 > /dev/null 2>&1; then
+#               CHANGED=$(git diff HEAD~1 HEAD --name-only)
+#             else
+#               CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
+#             fi
+
+#             if echo "$CHANGED" | grep -q "node-backend/package.json"; then
+#               echo "package.json changed - running npm install"
+#               cd node-backend && npm install --production && cd ..
+#             else
+#               echo "package.json unchanged - skipping npm install"
+#             fi
+
+#             cd node-backend
+#             if pm2 list | grep -q "cicd-demo"; then
+#               pm2 restart cicd-demo
+#             else
+#               pm2 start server.js --name cicd-demo
+#               pm2 save
+#             fi
+#             echo "=== Backend deploy done ==="
+#           ENDSSH
+
+#       - name: Health check
+#         run: |
+#           sleep 8
+#           curl --fail --silent http://${{ secrets.EC2_HOST }}:3000/api/health \
+#             | grep '"success":true' && echo "Backend healthy!" || echo "Check PM2 logs"
+
+#   # JOB 4 — Deploy frontend + backend together (when frontend changed)
+#   deploy-with-frontend:
+#     name: Deploy With Frontend
+#     runs-on: ubuntu-latest
+#     needs: [detect-changes, build-frontend]
+#     if: |
+#       needs.detect-changes.outputs.frontend_changed == 'true' &&
+#       needs.build-frontend.result == 'success'
+#     steps:
+#       - uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 2
+
+#       - name: Download Angular build
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: angular-build
+#           path: angular-build-output/
+
+#       - name: Setup SSH
+#         run: |
+#           mkdir -p ~/.ssh
+#           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/key.pem
+#           chmod 600 ~/.ssh/key.pem
+#           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+#       - name: Copy Angular build to EC2
+#         run: |
+#           echo "Copying Angular build to EC2..."
+#           ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+#             "rm -rf ~/app/node-backend/public/* && mkdir -p ~/app/node-backend/public"
+#           scp -i ~/.ssh/key.pem -r angular-build-output/* \
+#             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app/node-backend/public/
+#           echo "Angular build copied!"
+
+#       - name: Deploy on EC2
+#         run: |
+#           ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+#             set -e
+#             echo "=== Full deploy (frontend + backend) ==="
+#             cd ~/app
+#             git pull origin main
+
+#             if git rev-parse HEAD~1 > /dev/null 2>&1; then
+#               CHANGED=$(git diff HEAD~1 HEAD --name-only)
+#             else
+#               CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
+#             fi
+
+#             if echo "$CHANGED" | grep -q "node-backend/package.json"; then
+#               echo "package.json changed - running npm install"
+#               cd node-backend && npm install --production && cd ..
+#             else
+#               echo "package.json unchanged - skipping npm install"
+#             fi
+
+#             cd node-backend
+#             if pm2 list | grep -q "cicd-demo"; then
+#               pm2 restart cicd-demo
+#             else
+#               pm2 start server.js --name cicd-demo
+#               pm2 save
+#             fi
+#             echo "=== Full deploy done ==="
+#           ENDSSH
+
+#       - name: Health check
+#         run: |
+#           sleep 8
+#           curl --fail --silent http://${{ secrets.EC2_HOST }}:3000/api/health \
+#             | grep '"success":true' && echo "App healthy!" || echo "Check PM2 logs"
+
+
 name: CI/CD Pipeline
 
 on:
@@ -7,7 +232,6 @@ on:
 
 jobs:
 
-  # JOB 1 — Detect what changed
   detect-changes:
     name: Detect What Changed
     runs-on: ubuntu-latest
@@ -22,11 +246,9 @@ jobs:
       - name: Check changed files
         id: check
         run: |
-          # If only one commit exists (first push), diff against empty tree
           if git rev-parse HEAD~1 > /dev/null 2>&1; then
             CHANGED=$(git diff --name-only HEAD~1 HEAD)
           else
-            echo "First commit - treating everything as changed"
             CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
           fi
 
@@ -38,7 +260,7 @@ jobs:
             echo "FRONTEND changed"
           else
             echo "frontend=false" >> $GITHUB_OUTPUT
-            echo "FRONTEND not changed - skipping Angular build"
+            echo "FRONTEND not changed"
           fi
 
           if echo "$CHANGED" | grep -q "^node-backend/"; then
@@ -49,7 +271,6 @@ jobs:
             echo "BACKEND not changed"
           fi
 
-  # JOB 2 — Build Angular (ONLY if angular-frontend/ changed)
   build-frontend:
     name: Build Angular
     runs-on: ubuntu-latest
@@ -72,7 +293,6 @@ jobs:
           else
             CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
           fi
-
           if echo "$CHANGED" | grep -q "angular-frontend/package.json"; then
             echo "package.json changed - npm install"
             npm install
@@ -92,7 +312,6 @@ jobs:
           path: angular-frontend/dist/angular-frontend/browser/
           retention-days: 1
 
-  # JOB 3 — Deploy backend only (backend changed, frontend did NOT change)
   deploy-backend-only:
     name: Deploy Backend Only
     runs-on: ubuntu-latest
@@ -108,19 +327,25 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/key.pem
+          echo "$EC2_SSH_KEY" > ~/.ssh/key.pem
           chmod 600 ~/.ssh/key.pem
-          ssh-keyscan -t rsa,ed25519 ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -t rsa,ed25519 $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "SSH setup done"
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
       - name: Deploy backend on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
-          ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+          ssh -i ~/.ssh/key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'ENDSSH'
             set -e
             echo "=== Backend-only deploy ==="
             cd ~/app
             git pull origin main
 
-            # Check if package.json changed - handle first commit case
             if git rev-parse HEAD~1 > /dev/null 2>&1; then
               CHANGED=$(git diff HEAD~1 HEAD --name-only)
             else
@@ -145,12 +370,13 @@ jobs:
           ENDSSH
 
       - name: Health check
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           sleep 8
-          curl --fail --silent http://${{ secrets.EC2_HOST }}:3000/api/health \
+          curl --fail --silent http://$EC2_HOST:3000/api/health \
             | grep '"success":true' && echo "Backend healthy!" || echo "Check PM2 logs"
 
-  # JOB 4 — Deploy frontend + backend together (when frontend changed)
   deploy-with-frontend:
     name: Deploy With Frontend
     runs-on: ubuntu-latest
@@ -172,24 +398,34 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/key.pem
+          echo "$EC2_SSH_KEY" > ~/.ssh/key.pem
           chmod 600 ~/.ssh/key.pem
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -t rsa,ed25519 $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "SSH setup done"
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
 
       - name: Copy Angular build to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           echo "Copying Angular build to EC2..."
-          ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+          ssh -i ~/.ssh/key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST \
             "rm -rf ~/app/node-backend/public/* && mkdir -p ~/app/node-backend/public"
-          scp -i ~/.ssh/key.pem -r angular-build-output/* \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app/node-backend/public/
+          scp -i ~/.ssh/key.pem -o StrictHostKeyChecking=no -r angular-build-output/* \
+            $EC2_USER@$EC2_HOST:~/app/node-backend/public/
           echo "Angular build copied!"
 
       - name: Deploy on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
-          ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+          ssh -i ~/.ssh/key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'ENDSSH'
             set -e
-            echo "=== Full deploy (frontend + backend) ==="
+            echo "=== Full deploy ==="
             cd ~/app
             git pull origin main
 
@@ -217,7 +453,9 @@ jobs:
           ENDSSH
 
       - name: Health check
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           sleep 8
-          curl --fail --silent http://${{ secrets.EC2_HOST }}:3000/api/health \
+          curl --fail --silent http://$EC2_HOST:3000/api/health \
             | grep '"success":true' && echo "App healthy!" || echo "Check PM2 logs"
