@@ -22,7 +22,14 @@ jobs:
       - name: Check changed files
         id: check
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          # If only one commit exists (first push), diff against empty tree
+          if git rev-parse HEAD~1 > /dev/null 2>&1; then
+            CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          else
+            echo "First commit - treating everything as changed"
+            CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
+          fi
+
           echo "Files changed:"
           echo "$CHANGED"
 
@@ -31,7 +38,7 @@ jobs:
             echo "FRONTEND changed"
           else
             echo "frontend=false" >> $GITHUB_OUTPUT
-            echo "FRONTEND not changed - will skip Angular build"
+            echo "FRONTEND not changed - skipping Angular build"
           fi
 
           if echo "$CHANGED" | grep -q "^node-backend/"; then
@@ -50,6 +57,8 @@ jobs:
     if: needs.detect-changes.outputs.frontend_changed == 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - uses: actions/setup-node@v4
         with:
@@ -58,7 +67,12 @@ jobs:
       - name: Install frontend deps
         working-directory: angular-frontend
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          if git rev-parse HEAD~1 > /dev/null 2>&1; then
+            CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          else
+            CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
+          fi
+
           if echo "$CHANGED" | grep -q "angular-frontend/package.json"; then
             echo "package.json changed - npm install"
             npm install
@@ -69,7 +83,7 @@ jobs:
 
       - name: Build Angular
         working-directory: angular-frontend
-        run: npm run build
+        run: npm run build -- --configuration development
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -78,7 +92,7 @@ jobs:
           path: angular-frontend/dist/angular-frontend/browser/
           retention-days: 1
 
-  # JOB 3 — Deploy backend only (ONLY if backend changed, frontend did NOT change)
+  # JOB 3 — Deploy backend only (backend changed, frontend did NOT change)
   deploy-backend-only:
     name: Deploy Backend Only
     runs-on: ubuntu-latest
@@ -88,6 +102,8 @@ jobs:
       needs.detect-changes.outputs.frontend_changed == 'false'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Setup SSH
         run: |
@@ -104,7 +120,13 @@ jobs:
             cd ~/app
             git pull origin main
 
-            CHANGED=$(git diff HEAD~1 HEAD --name-only)
+            # Check if package.json changed - handle first commit case
+            if git rev-parse HEAD~1 > /dev/null 2>&1; then
+              CHANGED=$(git diff HEAD~1 HEAD --name-only)
+            else
+              CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
+            fi
+
             if echo "$CHANGED" | grep -q "node-backend/package.json"; then
               echo "package.json changed - running npm install"
               cd node-backend && npm install --production && cd ..
@@ -138,6 +160,8 @@ jobs:
       needs.build-frontend.result == 'success'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Download Angular build
         uses: actions/download-artifact@v4
@@ -169,7 +193,12 @@ jobs:
             cd ~/app
             git pull origin main
 
-            CHANGED=$(git diff HEAD~1 HEAD --name-only)
+            if git rev-parse HEAD~1 > /dev/null 2>&1; then
+              CHANGED=$(git diff HEAD~1 HEAD --name-only)
+            else
+              CHANGED=$(git diff-tree --no-commit-id -r --name-only HEAD)
+            fi
+
             if echo "$CHANGED" | grep -q "node-backend/package.json"; then
               echo "package.json changed - running npm install"
               cd node-backend && npm install --production && cd ..
