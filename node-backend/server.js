@@ -44,7 +44,7 @@ app.get('/api/posts', async (req, res) => {
       count: response.data.length,
       data: response.data,
       deployedAt: new Date().toISOString(),
-      version: 'v3.0 - Posts feature added!'
+      version: 'v4.0 - Backend Only Deploy Test!'
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch posts' });
@@ -80,6 +80,25 @@ app.get('/api/comments', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch comments' });
+  }
+});
+
+
+app.get('/api/todos', async (req, res) => {
+  try {
+    const response = await axios.get('https://jsonplaceholder.typicode.com/todos');
+    res.json({
+      success: true,
+      source: 'jsonplaceholder.typicode.com/todos',
+      count: response.data.length,
+      completed: response.data.filter(t => t.completed).length,
+      pending: response.data.filter(t => !t.completed).length,
+      data: response.data.slice(0, 20),
+      deployedAt: new Date().toISOString(),
+      version: 'v4.0 - Todos route added - Backend Only Deploy!'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch todos' });
   }
 });
 
