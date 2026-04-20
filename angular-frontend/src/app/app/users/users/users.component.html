@@ -1,0 +1,68 @@
+<div class="page">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <span class="logo">⚡ CI/CD Demo</span>
+      <span class="badge" *ngIf="!loading && !error">
+        {{ count }} users · via {{ source }}
+      </span>
+    </div>
+  </header>
+
+  <!-- Pipeline status bar -->
+  <div class="pipeline">
+    <span class="step done">✓ GitHub Push</span>
+    <span class="arrow">→</span>
+    <span class="step done">✓ GitHub Actions</span>
+    <span class="arrow">→</span>
+    <span class="step done">✓ Build</span>
+    <span class="arrow">→</span>
+    <span class="step done">✓ Deploy EC2</span>
+    <span class="arrow">→</span>
+    <span class="step active">● Live on PM2</span>
+  </div>
+
+  <main class="main">
+    <div class="section-header">
+      <h1>Users Directory</h1>
+      <p>Data fetched from <code>jsonplaceholder.typicode.com</code> via Node.js backend</p>
+      <button (click)="loadUsers()" [disabled]="loading" class="btn">
+        {{ loading ? 'Loading…' : '↻ Refresh' }}
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div class="grid" *ngIf="loading">
+      <div class="skeleton" *ngFor="let i of [1,2,3,4,5,6]"></div>
+    </div>
+
+    <!-- Error -->
+    <div class="error" *ngIf="error">
+      <p>⚠️ {{ error }}</p>
+      <button (click)="loadUsers()" class="btn">Try again</button>
+    </div>
+
+    <!-- Users grid -->
+    <div class="grid" *ngIf="!loading && !error">
+      <div class="card" *ngFor="let user of users">
+        <div class="card-top">
+          <div class="avatar">{{ getInitials(user.name) }}</div>
+          <div>
+            <div class="name">{{ user.name }}</div>
+            <div class="username">@{{ user.username }}</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row">✉ <a [href]="'mailto:' + user.email">{{ user.email }}</a></div>
+          <div class="row">📞 {{ user.phone }}</div>
+          <div class="row">🌐 <a [href]="'http://' + user.website" target="_blank">{{ user.website }}</a></div>
+          <div class="row">📍 {{ user.address.city }}</div>
+        </div>
+        <div class="card-footer">🏢 {{ user.company.name }}</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>CI/CD Demo · Node.js + Angular + GitHub Actions + AWS EC2 + PM2</footer>
+</div>
