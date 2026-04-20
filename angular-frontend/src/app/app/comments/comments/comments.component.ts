@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { Comment, CommentsService } from '../comments.service';
+import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-comments',
   standalone: true,
-  imports: [],
+  imports: [CommonModule],
   templateUrl: './comments.component.html',
   styleUrl: './comments.component.css',
 })
