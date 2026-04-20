@@ -34,6 +34,23 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// NEW: Posts API route
+app.get('/api/posts', async (req, res) => {
+  try {
+    const response = await axios.get('https://jsonplaceholder.typicode.com/posts');
+    res.json({
+      success: true,
+      source: 'jsonplaceholder.typicode.com/posts',
+      count: response.data.length,
+      data: response.data,
+      deployedAt: new Date().toISOString(),
+      version: 'v3.0 - Posts feature added!'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch posts' });
+  }
+});
+
 // Serve Angular build files as static
 app.use(express.static(path.join(__dirname, 'public')));
 
