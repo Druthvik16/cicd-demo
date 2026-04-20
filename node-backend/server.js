@@ -29,7 +29,8 @@ app.get('/api/health', (req, res) => {
   res.json({
     success: true,
     message: 'Server is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    version: 'v3.0 - Backend Pipeline Test!'
   });
 });
 
