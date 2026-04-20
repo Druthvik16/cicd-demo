@@ -1,0 +1,44 @@
+<div class="posts-page">
+
+  <div class="deploy-banner" *ngIf="version">
+    <div class="deploy-item">
+      <span class="deploy-label">VERSION</span>
+      <span class="deploy-value">{{ version }}</span>
+    </div>
+    <div class="deploy-item">
+      <span class="deploy-label">TOTAL POSTS</span>
+      <span class="deploy-value">{{ count }}</span>
+    </div>
+    <div class="deploy-item">
+      <span class="deploy-label">DEPLOYED AT</span>
+      <span class="deploy-value">{{ deployedAt | date:'medium' }}</span>
+    </div>
+  </div>
+
+  <div class="section-header">
+    <h1>Albums Title</h1>
+    <p>Fetched from <code>jsonplaceholder.typicode.com/albums</code> via Node.js backend</p>
+    <button (click)="loadAlbums()" [disabled]="loading" class="btn">
+      {{ loading ? 'Loading…' : '↻ Refresh' }}
+    </button>
+  </div>
+
+  <div class="posts-list" *ngIf="loading">
+    <div class="post-skeleton" *ngFor="let i of [1,2,3,4,5]"></div>
+  </div>
+
+  <div class="error-box" *ngIf="error">
+    <p>⚠️ {{ error }}</p>
+  </div>
+
+  <div class="posts-list" *ngIf="!loading && !error">
+    <div class="post-card" *ngFor="let album of albums">
+      <div class="post-header">
+        <span class="post-id">#{{ album.id }}</span>
+        <span class="post-user">User {{ album.userId }}</span>
+      </div>
+      <div class="post-title">{{ album.title }}</div>
+    </div>
+  </div>
+
+</div>

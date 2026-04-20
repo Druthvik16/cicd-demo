@@ -84,21 +84,19 @@ app.get('/api/comments', async (req, res) => {
 });
 
 
-app.get('/api/todos', async (req, res) => {
+app.get('/api/albums', async (req, res) => {
   try {
-    const response = await axios.get('https://jsonplaceholder.typicode.com/todos');
+    const response = await axios.get('https://jsonplaceholder.typicode.com/albums');
     res.json({
       success: true,
-      source: 'jsonplaceholder.typicode.com/todos',
+      source: 'jsonplaceholder.typicode.com/albums',
       count: response.data.length,
-      completed: response.data.filter(t => t.completed).length,
-      pending: response.data.filter(t => !t.completed).length,
-      data: response.data.slice(0, 20),
+      data: response.data.slice(0, 10),
       deployedAt: new Date().toISOString(),
-      version: 'v4.0 - Todos route added - Backend Only Deploy!'
+      version: 'v4.0 - Albums route added - Backend Only Deploy!'
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch todos' });
+    res.status(500).json({ success: false, message: 'Failed to fetch albums' });
   }
 });
 
