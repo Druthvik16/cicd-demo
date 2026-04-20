@@ -110,7 +110,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/key.pem
           chmod 600 ~/.ssh/key.pem
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -t rsa,ed25519 ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy backend on EC2
         run: |
