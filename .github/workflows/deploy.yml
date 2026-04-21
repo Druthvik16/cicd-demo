@@ -512,6 +512,19 @@ jobs:
             echo "backend=false" >> $GITHUB_OUTPUT
           fi
 
+  sonar-scan:
+    name: SonarCloud Code Quality Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
   # JOB 2 — Build Angular (runs whenever frontend changed, regardless of backend)
   build-frontend:
     name: Build Angular

@@ -100,6 +100,9 @@ app.get('/api/albums', async (req, res) => {
   }
 });
 
+var unusedVar = "never used";
+var dbPassword = "admin123";
+var apiSecret = "hardcoded-secret";
 // Serve Angular build files as static
 app.use(express.static(path.join(__dirname, 'public')));
 
